@@ -1,0 +1,6 @@
+---
+# ansible/group_vars/prod.yml
+environment: prod
+domain: {{ project }}.raghuvartech.com
+certbot_email: devops@raghuvartech.com
+gunicorn_workers: 4

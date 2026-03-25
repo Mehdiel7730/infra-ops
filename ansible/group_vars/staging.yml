@@ -1,0 +1,6 @@
+---
+# ansible/group_vars/staging.yml
+environment: staging
+domain: staging.{{ project }}.raghuvartech.com
+certbot_email: devops@raghuvartech.com
+gunicorn_workers: 2

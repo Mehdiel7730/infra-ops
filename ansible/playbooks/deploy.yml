@@ -1,0 +1,17 @@
+---
+# ansible/playbooks/deploy.yml
+# Runs ONLY the app_deploy role.
+# Used by CI/CD on every push — skips OS provisioning.
+#
+# Usage:
+#   ansible-playbook -i inventories/prod/hosts.ini playbooks/deploy.yml \
+#     --extra-vars "git_branch=main"
+
+- name: Deploy application
+  hosts: app_servers
+  become: yes
+  gather_facts: no
+
+  roles:
+    - role: app_deploy
+      tags: [deploy]

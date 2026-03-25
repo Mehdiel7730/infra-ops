@@ -1,0 +1,26 @@
+---
+# ansible/group_vars/all.yml
+# Variables shared across ALL environments.
+# Per-environment overrides live in group_vars/dev.yml, staging.yml, prod.yml
+
+project: app
+deploy_user: ubuntu
+deploy_root: /var/www/{{ project }}
+
+# Services
+backend_port: 8000
+frontend_port: 3000
+service_port: 8080
+
+# Node / Python versions
+node_version: "24"
+python_version: "3.12"
+go_version: "1.24.0"
+
+# PostgreSQL
+pg_version: "17"
+pg_db: "{{ project }}"
+pg_user: "{{ project }}_su"
+
+# PM2
+pm2_ecosystem_src: "{{ deploy_root }}/ecosystem.config.js"

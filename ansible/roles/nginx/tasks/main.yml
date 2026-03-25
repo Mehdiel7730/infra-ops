@@ -1,0 +1,60 @@
+---
+# roles/nginx/tasks/main.yml
+
+- name: Install Nginx and Certbot
+  apt:
+    name:
+      - nginx
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    update_cache: yes
+
+- name: Remove default Nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Deploy Nginx vhost
+  template:
+    src: app.conf.j2
+    dest: "/etc/nginx/sites-available/{{ project }}"
+    mode: "0644"
+  notify: reload nginx
+
+- name: Enable Nginx vhost
+  file:
+    src: "/etc/nginx/sites-available/{{ project }}"
+    dest: "/etc/nginx/sites-enabled/{{ project }}"
+    state: link
+  notify: reload nginx
+
+- name: Test Nginx configuration
+  command: nginx -t
+  changed_when: false
+
+- name: Ensure Nginx is started and enabled
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Obtain / renew TLS certificate via Certbot
+  command: >
+    certbot --nginx
+    -d {{ domain }}
+    --non-interactive
+    --agree-tos
+    --email {{ certbot_email }}
+    --redirect
+  args:
+    creates: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
+  notify: reload nginx
+
+- name: Set up Certbot auto-renew cron
+  cron:
+    name: "certbot renew"
+    minute: "0"
+    hour: "3"
+    job: "certbot renew --quiet --post-hook 'systemctl reload nginx'"
+    user: root

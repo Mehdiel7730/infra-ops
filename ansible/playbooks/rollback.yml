@@ -1,0 +1,32 @@
+---
+# ansible/playbooks/rollback.yml
+# Quick rollback: resets each repo to HEAD~1 and restarts PM2.
+# For a proper releases/current symlink pattern, extend this playbook.
+#
+# Usage:
+#   ansible-playbook -i inventories/prod/hosts.ini playbooks/rollback.yml
+
+- name: Rollback to previous commit
+  hosts: app_servers
+  become: yes
+  become_user: "{{ deploy_user }}"
+  gather_facts: no
+
+  tasks:
+    - name: Roll back {{ project }}-backend
+      shell: git reset --hard HEAD~1
+      args:
+        chdir: "{{ deploy_root }}/{{ project }}-backend"
+
+    - name: Restart PM2 apps
+      shell: pm2 restart all
+      args:
+        executable: /bin/bash
+
+    - name: Display PM2 status
+      shell: pm2 list
+      register: pm2_status
+
+    - name: Show PM2 status
+      debug:
+        var: pm2_status.stdout_lines

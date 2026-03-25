@@ -1,6 +1,6 @@
-# vedico-infra
+# app-infra
 
-Infrastructure-as-Code for the Vedico platform.  
+Infrastructure-as-Code for the App platform.  
 **Stack:** Terraform (AWS) · Ansible · GitHub Actions  
 **Environments:** `dev` → `staging` → `prod`
 
@@ -9,7 +9,7 @@ Infrastructure-as-Code for the Vedico platform.
 ## Repository Structure
 
 ```
-vedico-infra/
+app-infra/
 ├── terraform/
 │   ├── modules/                   # Reusable modules
 │   │   ├── networking/            # VPC, subnets, SGs
@@ -51,7 +51,7 @@ vedico-infra/
 
 ```bash
 chmod +x scripts/bootstrap-state.sh
-./scripts/bootstrap-state.sh ap-south-1 vedico
+./scripts/bootstrap-state.sh ap-south-1 app
 ```
 
 Update the `bucket` value in each `terraform/environments/*/backend.tf`  
@@ -65,9 +65,9 @@ repository secrets:
 
 | Secret | Value |
 |--------|-------|
-| `AWS_ROLE_ARN_DEV` | arn:aws:iam::ACCOUNT:role/vedico-dev-github |
-| `AWS_ROLE_ARN_STAGING` | arn:aws:iam::ACCOUNT:role/vedico-staging-github |
-| `AWS_ROLE_ARN_PROD` | arn:aws:iam::ACCOUNT:role/vedico-prod-github |
+| `AWS_ROLE_ARN_DEV` | arn:aws:iam::ACCOUNT:role/app-dev-github |
+| `AWS_ROLE_ARN_STAGING` | arn:aws:iam::ACCOUNT:role/app-staging-github |
+| `AWS_ROLE_ARN_PROD` | arn:aws:iam::ACCOUNT:role/app-prod-github |
 
 ### 3. Add all secrets to GitHub
 
@@ -117,8 +117,8 @@ ansible-playbook -i inventories/prod/hosts.ini playbooks/rollback.yml
 ```bash
 cd terraform/environments/dev
 terraform init
-terraform plan -var="ec2_public_key=$(cat ~/.ssh/vedico-dev.pub)"
-terraform apply -var="ec2_public_key=$(cat ~/.ssh/vedico-dev.pub)"
+terraform plan -var="ec2_public_key=$(cat ~/.ssh/app-dev.pub)"
+terraform apply -var="ec2_public_key=$(cat ~/.ssh/app-dev.pub)"
 ```
 
 ---
