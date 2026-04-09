@@ -1,0 +1,195 @@
+##############################################################
+# .github/workflows/ansible.yml
+#
+# Triggers:
+#   Push to main     → full provision (site.yml) if playbooks changed
+#                    → deploy only (deploy.yml) if app code unchanged
+#   workflow_dispatch → manual run with env + playbook choice
+#
+# Promotion order: dev → staging (manual) → prod (manual)
+##############################################################
+
+name: "Ansible"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ansible/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+      playbook:
+        description: "Playbook to run"
+        required: true
+        type: choice
+        options: [site.yml, deploy.yml, rollback.yml]
+      git_branch:
+        description: "App branch to deploy (default: main)"
+        required: false
+        default: "main"
+
+env:
+  ANSIBLE_FORCE_COLOR: "1"
+  ANSIBLE_HOST_KEY_CHECKING: "False"
+  PROJECT_NAME: app
+
+jobs:
+  # ── Dev: auto-deploy on push ────────────────────────────────
+  deploy-dev:
+    name: "Ansible → dev"
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: |
+          pip install --upgrade ansible boto3
+
+      - name: Write SSH private key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY_DEV }}" > ~/.ssh/ec2-dev.pem
+          chmod 600 ~/.ssh/ec2-dev.pem
+
+      - name: Fetch Terraform output (server IP)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ap-south-1
+
+      - name: Inject server IP into inventory
+        run: |
+          SERVER_IP=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Environment,Values=dev" "Name=tag:Project,Values=${{ env.PROJECT_NAME }}" \
+            --query "Addresses[0].PublicIp" --output text)
+          sed -i "s/<DEV_EIP>/${SERVER_IP}/" ansible/inventories/dev/hosts.ini
+          echo "Deploying to: ${SERVER_IP}"
+
+      - name: Determine playbook
+        id: playbook
+        run: |
+          PB=${{ github.event.inputs.playbook || 'deploy.yml' }}
+          echo "playbook=${PB}" >> $GITHUB_OUTPUT
+
+      - name: Run Ansible
+        working-directory: ansible
+        run: |
+          ansible-playbook \
+            -i inventories/dev/hosts.ini \
+            playbooks/${{ steps.playbook.outputs.playbook }} \
+            --extra-vars "git_branch=${{ github.event.inputs.git_branch || 'main' }}" \
+            --extra-vars "pg_password=${{ secrets.PG_PASSWORD_DEV }}" \
+            --extra-vars "backend_app_key=${{ secrets.BACKEND_APP_KEY_DEV }}" \
+            --extra-vars "aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --extra-vars "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --extra-vars "s3_bucket_name=${{ env.PROJECT_NAME }}-dev-bucket" \
+            --extra-vars "internal_notify_token=${{ secrets.INTERNAL_NOTIFY_TOKEN_DEV }}" \
+            --extra-vars "github_deploy_key='${{ secrets.GITHUB_DEPLOY_KEY }}'"
+
+  # ── Staging: manual approval ────────────────────────────────
+  deploy-staging:
+    name: "Ansible → staging"
+    needs: deploy-dev
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: pip install --upgrade ansible boto3
+
+      - name: Write SSH private key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY_STAGING }}" > ~/.ssh/ec2-staging.pem
+          chmod 600 ~/.ssh/ec2-staging.pem
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ap-south-1
+
+      - name: Inject server IP
+        run: |
+          SERVER_IP=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Environment,Values=staging" "Name=tag:Project,Values=${{ env.PROJECT_NAME }}" \
+            --query "Addresses[0].PublicIp" --output text)
+          sed -i "s/<STAGING_EIP>/${SERVER_IP}/" ansible/inventories/staging/hosts.ini
+
+      - name: Run Ansible
+        working-directory: ansible
+        run: |
+          ansible-playbook \
+            -i inventories/staging/hosts.ini \
+            playbooks/${{ github.event.inputs.playbook || 'deploy.yml' }} \
+            --extra-vars "git_branch=${{ github.event.inputs.git_branch || 'main' }}" \
+            --extra-vars "pg_password=${{ secrets.PG_PASSWORD_STAGING }}" \
+            --extra-vars "backend_app_key=${{ secrets.BACKEND_APP_KEY_STAGING }}" \
+            --extra-vars "aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --extra-vars "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --extra-vars "s3_bucket_name=${{ env.PROJECT_NAME }}-staging-bucket" \
+            --extra-vars "internal_notify_token=${{ secrets.INTERNAL_NOTIFY_TOKEN_STAGING }}" \
+            --extra-vars "github_deploy_key='${{ secrets.GITHUB_DEPLOY_KEY }}'"
+
+  # ── Prod: manual approval ────────────────────────────────────
+  deploy-prod:
+    name: "Ansible → prod"
+    needs: deploy-staging
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: pip install --upgrade ansible boto3
+
+      - name: Write SSH private key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY_PROD }}" > ~/.ssh/ec2-prod.pem
+          chmod 600 ~/.ssh/ec2-prod.pem
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PROD }}
+          aws-region: ap-south-1
+
+      - name: Inject server IP
+        run: |
+          SERVER_IP=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Environment,Values=prod" "Name=tag:Project,Values=${{ env.PROJECT_NAME }}" \
+            --query "Addresses[0].PublicIp" --output text)
+          sed -i "s/<PROD_EIP>/${SERVER_IP}/" ansible/inventories/prod/hosts.ini
+
+      - name: Run Ansible
+        working-directory: ansible
+        run: |
+          ansible-playbook \
+            -i inventories/prod/hosts.ini \
+            playbooks/${{ github.event.inputs.playbook || 'deploy.yml' }} \
+            --extra-vars "git_branch=${{ github.event.inputs.git_branch || 'main' }}" \
+            --extra-vars "pg_password=${{ secrets.PG_PASSWORD_PROD }}" \
+            --extra-vars "backend_app_key=${{ secrets.BACKEND_APP_KEY_PROD }}" \
+            --extra-vars "aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --extra-vars "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --extra-vars "s3_bucket_name=${{ env.PROJECT_NAME }}-prod-bucket" \
+            --extra-vars "internal_notify_token=${{ secrets.INTERNAL_NOTIFY_TOKEN_PROD }}" \
+            --extra-vars "github_deploy_key='${{ secrets.GITHUB_DEPLOY_KEY }}'"

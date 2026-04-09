@@ -1,0 +1,57 @@
+// {{ ansible_managed }}
+// Rendered by Ansible – do not edit on server.
+
+module.exports = {
+  apps: [
+    {
+      name: "{{ project }}-backend",
+      cwd: "{{ deploy_root }}/{{ project }}-backend",
+      script: "venv/bin/gunicorn",
+      args: "main:app -w {{ gunicorn_workers }} -k uvicorn.workers.UvicornWorker -b 127.0.0.1:{{ backend_port }}",
+      interpreter: "none",
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "512M",
+      env: {
+        ENV: "{{ environment }}",
+      },
+      error_file: "/var/log/pm2/{{ project }}-backend-error.log",
+      out_file:   "/var/log/pm2/{{ project }}-backend-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+    },
+    {
+      name: "{{ project }}-frontend",
+      cwd: "{{ deploy_root }}/{{ project }}-frontend",
+      script: "node",
+      args: ".next/standalone/server.js",
+      interpreter: "none",
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "512M",
+      env: {
+        NODE_ENV: "production",
+        PORT: {{ frontend_port }},
+        HOSTNAME: "127.0.0.1",
+      },
+      error_file: "/var/log/pm2/{{ project }}-frontend-error.log",
+      out_file:   "/var/log/pm2/{{ project }}-frontend-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+    },
+    {
+      name: "{{ project }}-service",
+      cwd: "{{ deploy_root }}/{{ project }}-service",
+      script: "./{{ project }}-service",
+      interpreter: "none",
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "256M",
+      env: {
+        REALTIME_PORT: "{{ service_port }}",
+        BACKEND_BASE_URL: "http://127.0.0.1:{{ backend_port }}",
+      },
+      error_file: "/var/log/pm2/{{ project }}-service-error.log",
+      out_file:   "/var/log/pm2/{{ project }}-service-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+    },
+  ],
+};

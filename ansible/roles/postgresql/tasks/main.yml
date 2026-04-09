@@ -1,0 +1,94 @@
+---
+# roles/postgresql/tasks/main.yml
+
+- name: Add PostgreSQL GPG key
+  shell: |
+    wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+      gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+  args:
+    creates: /usr/share/keyrings/postgresql.gpg
+
+- name: Add PostgreSQL apt repository
+  copy:
+    dest: /etc/apt/sources.list.d/pgdg.list
+    content: |
+      deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main
+
+- name: Update apt and install PostgreSQL {{ pg_version }}
+  apt:
+    name:
+      - "postgresql-{{ pg_version }}"
+      - "postgresql-client-{{ pg_version }}"
+      - "postgresql-{{ pg_version }}-postgis-3"
+      - python3-psycopg2    # required for Ansible postgresql modules
+    state: present
+    update_cache: yes
+
+- name: Ensure PostgreSQL is started and enabled
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Create application database
+  become: yes
+  become_user: postgres
+  postgresql_db:
+    name: "{{ pg_db }}"
+    encoding: UTF8
+    lc_collate: en_US.UTF-8
+    lc_ctype: en_US.UTF-8
+    state: present
+
+- name: Create application DB user
+  become: yes
+  become_user: postgres
+  postgresql_user:
+    name: "{{ pg_user }}"
+    password: "{{ pg_password }}"   # injected from vault / CI secret
+    state: present
+
+- name: Configure DB user settings
+  become: yes
+  become_user: postgres
+  postgresql_query:
+    db: postgres
+    query: |
+      ALTER ROLE {{ pg_user }} SET client_encoding TO 'utf8';
+      ALTER ROLE {{ pg_user }} SET default_transaction_isolation TO 'read committed';
+      ALTER ROLE {{ pg_user }} SET timezone TO 'UTC';
+
+- name: Grant privileges on database
+  become: yes
+  become_user: postgres
+  postgresql_privs:
+    database: "{{ pg_db }}"
+    roles: "{{ pg_user }}"
+    type: database
+    privs: ALL
+
+- name: Set DB owner
+  become: yes
+  become_user: postgres
+  postgresql_query:
+    db: postgres
+    query: "ALTER DATABASE {{ pg_db }} OWNER TO {{ pg_user }};"
+
+- name: Enable PostGIS extension
+  become: yes
+  become_user: postgres
+  postgresql_ext:
+    db: "{{ pg_db }}"
+    name: postgis
+    state: present
+
+- name: Configure pg_hba for local password auth
+  postgresql_pg_hba:
+    dest: "/etc/postgresql/{{ pg_version }}/main/pg_hba.conf"
+    contype: host
+    databases: "{{ pg_db }}"
+    users: "{{ pg_user }}"
+    source: "127.0.0.1/32"
+    method: md5
+    state: present
+  notify: restart postgresql

@@ -1,0 +1,75 @@
+##############################################################
+# .github/workflows/drift-detection.yml
+#
+# Runs terraform plan on a schedule to detect drift between
+# real AWS state and what's in code.
+# Opens a GitHub Issue if drift is detected.
+##############################################################
+
+name: "Drift Detection"
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 2 AM UTC daily
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+env:
+  TF_VERSION: "1.8.5"
+  AWS_REGION: "ap-south-1"
+
+jobs:
+  drift:
+    name: "Drift (${{ matrix.environment }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, staging, prod]
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets[format('AWS_ROLE_ARN_{0}', upper(matrix.environment))] }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: terraform init -input=false
+
+      - name: Terraform Plan (drift check)
+        id: plan
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: |
+          terraform plan -detailed-exitcode -input=false -no-color \
+            -var="ec2_public_key=${{ secrets[format('EC2_PUBLIC_KEY_{0}', upper(matrix.environment))] }}" \
+            2>&1 | tee /tmp/drift.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Open GitHub Issue on drift
+        if: steps.plan.outputs.exit_code == '2'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const drift = fs.readFileSync('/tmp/drift.txt', 'utf8').slice(0, 60000);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Terraform drift detected in \`${{ matrix.environment }}\` [${new Date().toISOString().slice(0,10)}]`,
+              body: `Terraform detected infrastructure drift in **${{ matrix.environment }}**.\n\nReview and apply or import the drifted resources.\n\n\`\`\`\n${drift}\n\`\`\``,
+              labels: ['drift', 'infrastructure', '${{ matrix.environment }}']
+            });

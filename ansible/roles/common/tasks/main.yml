@@ -1,0 +1,130 @@
+---
+# roles/common/tasks/main.yml
+
+- name: Update apt cache and upgrade packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Install base system packages
+  apt:
+    name:
+      - git
+      - curl
+      - wget
+      - gnupg
+      - build-essential
+      - software-properties-common
+      - ca-certificates
+      - lsb-release
+      - apt-transport-https
+      - unzip
+      - vim
+      - htop
+      - ufw
+      - fail2ban
+      - logrotate
+      - acl
+    state: present
+
+# ── Python 3.12 ───────────────────────────────────────────────
+- name: Add deadsnakes PPA
+  apt_repository:
+    repo: ppa:deadsnakes/ppa
+    state: present
+
+- name: Install Python {{ python_version }}
+  apt:
+    name:
+      - "python{{ python_version }}"
+      - "python{{ python_version }}-venv"
+      - "python{{ python_version }}-dev"
+      - python3-pip
+    state: present
+    update_cache: yes
+
+# ── Node.js ───────────────────────────────────────────────────
+- name: Add NodeSource repo for Node {{ node_version }}
+  shell: |
+    curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash -
+  args:
+    creates: /etc/apt/sources.list.d/nodesource.list
+
+- name: Install Node.js
+  apt:
+    name: nodejs
+    state: present
+    update_cache: yes
+
+# ── Go ────────────────────────────────────────────────────────
+- name: Download Go {{ go_version }}
+  get_url:
+    url: "https://go.dev/dl/go{{ go_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/go{{ go_version }}.tar.gz"
+    mode: "0644"
+
+- name: Remove existing Go installation
+  file:
+    path: /usr/local/go
+    state: absent
+
+- name: Extract Go
+  unarchive:
+    src: "/tmp/go{{ go_version }}.tar.gz"
+    dest: /usr/local
+    remote_src: yes
+
+- name: Set Go PATH in /etc/profile.d
+  copy:
+    dest: /etc/profile.d/go.sh
+    content: 'export PATH=$PATH:/usr/local/go/bin'
+    mode: "0644"
+
+# ── PM2 ───────────────────────────────────────────────────────
+- name: Install PM2 globally
+  npm:
+    name: pm2
+    global: yes
+    state: present
+
+# ── UFW Firewall ──────────────────────────────────────────────
+- name: Allow SSH through UFW
+  ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+
+- name: Allow HTTP
+  ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+
+- name: Allow HTTPS
+  ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+
+- name: Enable UFW (default deny incoming)
+  ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+
+# ── fail2ban ──────────────────────────────────────────────────
+- name: Enable and start fail2ban
+  service:
+    name: fail2ban
+    state: started
+    enabled: yes
+
+# ── Deploy root directory ─────────────────────────────────────
+- name: Create deploy root
+  file:
+    path: "{{ deploy_root }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: "0755"

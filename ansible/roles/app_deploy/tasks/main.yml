@@ -1,0 +1,150 @@
+---
+# roles/app_deploy/tasks/main.yml
+
+# ── Directories ───────────────────────────────────────────────
+- name: Ensure service directories exist
+  file:
+    path: "{{ deploy_root }}/{{ item }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: "0755"
+  loop:
+    - "{{ project }}-backend"
+    - "{{ project }}-frontend"
+    - "{{ project }}-service"
+
+# ── SSH deploy key for GitHub ─────────────────────────────────
+- name: Place GitHub deploy key
+  copy:
+    content: "{{ github_deploy_key }}"   # injected from CI secret
+    dest: "/home/{{ deploy_user }}/.ssh/id_ed25519_github"
+    owner: "{{ deploy_user }}"
+    mode: "0600"
+
+- name: Configure SSH to use deploy key for GitHub
+  blockinfile:
+    path: "/home/{{ deploy_user }}/.ssh/config"
+    create: yes
+    block: |
+      Host github.com
+        IdentityFile ~/.ssh/id_ed25519_github
+        StrictHostKeyChecking no
+    owner: "{{ deploy_user }}"
+    mode: "0600"
+
+# ── Backend (FastAPI) ─────────────────────────────────────────
+- name: Clone / update {{ project }}-backend
+  become_user: "{{ deploy_user }}"
+  git:
+    repo: "git@github.com:raghuvartech/{{ project }}-backend.git"
+    dest: "{{ deploy_root }}/{{ project }}-backend"
+    version: "{{ git_branch | default('main') }}"
+    force: yes
+    accept_hostkey: yes
+
+- name: Create Python venv
+  become_user: "{{ deploy_user }}"
+  command: "python{{ python_version }} -m venv {{ deploy_root }}/{{ project }}-backend/venv"
+  args:
+    creates: "{{ deploy_root }}/{{ project }}-backend/venv/bin/activate"
+
+- name: Install Python dependencies
+  become_user: "{{ deploy_user }}"
+  pip:
+    requirements: "{{ deploy_root }}/{{ project }}-backend/requirements/prod.txt"
+    virtualenv: "{{ deploy_root }}/{{ project }}-backend/venv"
+    extra_args: "--upgrade"
+
+- name: Install Weasyprint system libs
+  apt:
+    name:
+      - libpango-1.0-0
+      - libpangocairo-1.0-0
+      - libcairo2
+      - libgdk-pixbuf-2.0-0
+      - shared-mime-info
+    state: present
+
+- name: Write backend .env
+  template:
+    src: backend.env.j2
+    dest: "{{ deploy_root }}/{{ project }}-backend/.env"
+    owner: "{{ deploy_user }}"
+    mode: "0600"
+
+- name: Run Alembic migrations
+  become_user: "{{ deploy_user }}"
+  shell: |
+    source {{ deploy_root }}/{{ project }}-backend/venv/bin/activate
+    alembic upgrade head
+  args:
+    chdir: "{{ deploy_root }}/{{ project }}-backend"
+    executable: /bin/bash
+
+# ── Frontend (Next.js standalone) ────────────────────────────
+# The standalone build is built locally in CI and rsynced to the server.
+# This task just writes the .env and ensures the directory is owned correctly.
+- name: Write frontend .env
+  copy:
+    content: |
+      NEXT_PUBLIC_BACKEND_URL=https://{{ domain }}/api
+    dest: "{{ deploy_root }}/{{ project }}-frontend/.env"
+    owner: "{{ deploy_user }}"
+    mode: "0644"
+
+- name: Fix frontend directory ownership
+  file:
+    path: "{{ deploy_root }}/{{ project }}-frontend"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    recurse: yes
+
+# ── Go realtime service ───────────────────────────────────────
+# Binary is built locally in CI and uploaded to /tmp, then moved here.
+- name: Move Go binary into place
+  shell: |
+    if [ -f /tmp/{{ project }}-service ]; then
+      mv /tmp/{{ project }}-service {{ deploy_root }}/{{ project }}-service/{{ project }}-service
+      chmod +x {{ deploy_root }}/{{ project }}-service/{{ project }}-service
+    fi
+  args:
+    executable: /bin/bash
+
+- name: Write {{ project }}-service .env
+  template:
+    src: service.env.j2
+    dest: "{{ deploy_root }}/{{ project }}-service/.env"
+    owner: "{{ deploy_user }}"
+    mode: "0600"
+
+# ── PM2 ecosystem ─────────────────────────────────────────────
+- name: Write PM2 ecosystem config
+  template:
+    src: ecosystem.config.js.j2
+    dest: "{{ deploy_root }}/ecosystem.config.js"
+    owner: "{{ deploy_user }}"
+    mode: "0644"
+
+- name: Start / reload PM2 apps
+  become_user: "{{ deploy_user }}"
+  shell: |
+    export PATH=$PATH:/usr/local/go/bin
+    pm2 startOrReload {{ deploy_root }}/ecosystem.config.js --update-env
+  args:
+    executable: /bin/bash
+
+- name: Save PM2 process list
+  become_user: "{{ deploy_user }}"
+  command: pm2 save
+
+- name: Generate PM2 startup script
+  command: pm2 startup systemd -u {{ deploy_user }} --hp /home/{{ deploy_user }}
+  register: pm2_startup
+  changed_when: false
+
+- name: Enable PM2 on boot
+  shell: "{{ pm2_startup.stdout_lines | select('match', '^sudo') | first }}"
+  when: pm2_startup.stdout_lines is defined
+  ignore_errors: yes

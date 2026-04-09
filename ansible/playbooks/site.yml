@@ -1,0 +1,26 @@
+---
+# ansible/playbooks/site.yml
+# Full server provisioning from zero.
+# Run once on a fresh EC2 instance.
+#
+# Usage:
+#   ansible-playbook -i inventories/dev/hosts.ini playbooks/site.yml \
+#     --extra-vars "@secrets/dev.yml"
+
+- name: Full server provisioning
+  hosts: app_servers
+  become: yes
+  gather_facts: yes
+
+  roles:
+    - role: common
+      tags: [common, packages]
+
+    - role: postgresql
+      tags: [postgresql, db]
+
+    - role: app_deploy
+      tags: [deploy, app]
+
+    - role: nginx
+      tags: [nginx, tls]
